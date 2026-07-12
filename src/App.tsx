@@ -26,9 +26,15 @@ import {
   Search,
   Library as LibraryIcon,
   UserCircle,
+  Download,
   X,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
 
 const Logo = ({ className = "" }: { className?: string }) => (
   <div className={`font-serif font-bold tracking-tight ${className}`}>
@@ -38,30 +44,37 @@ const Logo = ({ className = "" }: { className?: string }) => (
 
 const InstallPrompt = () => {
   const [show, setShow] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    // Show prompt for demo purposes after 2 seconds if not dismissed
-    const dismissed = localStorage.getItem("galam_install_dismissed");
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+      || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+
+    if (isStandalone || sessionStorage.getItem("alash_install_dismissed")) {
+      return;
+    }
 
     const handler = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e);
-      if (!dismissed) setShow(true);
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setShow(true);
+    };
+
+    const installedHandler = () => {
+      setShow(false);
+      setDeferredPrompt(null);
     };
 
     window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", installedHandler);
 
-    // For demo/testing in preview, just show it anyway if not dismissed
-    if (!dismissed) {
-      const timer = setTimeout(() => setShow(true), 2000);
-      return () => {
-        clearTimeout(timer);
-        window.removeEventListener("beforeinstallprompt", handler);
-      };
-    }
+    const timer = window.setTimeout(() => setShow(true), 1200);
 
-    return () => window.removeEventListener("beforeinstallprompt", handler);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", installedHandler);
+    };
   }, []);
 
   const handleInstall = async () => {
@@ -70,38 +83,52 @@ const InstallPrompt = () => {
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === "accepted") {
         setShow(false);
+      } else {
+        sessionStorage.setItem("alash_install_dismissed", "true");
+        setShow(false);
       }
       setDeferredPrompt(null);
     } else {
-      // Fallback for iOS or if prompt not available
+      const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
       alert(
-        'Орнату үшін браузер мәзірінен "Негізгі экранға қосу" (Add to Home Screen) таңдаңыз.',
+        isIos
+          ? 'Safari мәзіріндегі «Бөлісу» батырмасын басып, «Негізгі экранға қосу» тармағын таңдаңыз.'
+          : 'Браузер мәзірінен «Қолданбаны орнату» немесе «Негізгі экранға қосу» тармағын таңдаңыз.',
       );
-      setShow(false);
     }
   };
 
   const dismiss = () => {
     setShow(false);
-    localStorage.setItem("galam_install_dismissed", "true");
+    sessionStorage.setItem("alash_install_dismissed", "true");
   };
 
   if (!show) return null;
 
   return (
-    <div className="absolute top-0 left-0 right-0 z-[100] p-4 animate-in slide-in-from-top-4 duration-500 fade-in">
-      <div className="bg-gray-900/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl flex items-center gap-4 border border-gray-800">
+    <div className="fixed top-0 left-0 right-0 z-[100] p-3 sm:p-4 animate-in slide-in-from-top-4 duration-500 fade-in">
+      <div className="mx-auto max-w-2xl bg-gray-900/95 backdrop-blur-md text-white rounded-2xl p-3.5 sm:p-4 shadow-2xl flex items-center gap-3 sm:gap-4 border border-gray-700/80">
         <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shrink-0 shadow-inner">
           <Logo className="text-gray-900 text-sm" />
         </div>
-        <div className="flex-1 min-w-0" onClick={handleInstall}>
+        <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-sm">ALASH. орнату</h3>
           <p className="text-xs text-gray-300 mt-0.5 leading-tight">
-            Қолданба жақсы жұмыс жасауы үшін негізгі экранға қосып алыңыз
+            Қолданба жақсы жұмыс жасауы үшін орнатып алыңыз
           </p>
         </div>
         <button
+          type="button"
+          onClick={handleInstall}
+          className="h-10 px-3.5 sm:px-4 rounded-xl bg-white text-gray-900 text-xs sm:text-sm font-bold flex items-center gap-1.5 shrink-0 hover:bg-amber-50 active:scale-[0.97] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+        >
+          <Download size={16} />
+          Орнату
+        </button>
+        <button
+          type="button"
           onClick={dismiss}
+          aria-label="Орнату хабарламасын жабу"
           className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 shrink-0 transition-colors"
         >
           <X size={16} />
@@ -132,6 +159,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-full w-full bg-gray-50 flex flex-col font-sans relative overflow-hidden">
+      {!isReader && <InstallPrompt />}
       {!isReader && (
         <header className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-100 z-10">
           <Link
