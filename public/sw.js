@@ -1,4 +1,4 @@
-const CACHE_NAME = "alash-pwa-v1";
+const CACHE_NAME = "alash-pwa-v2";
 const APP_SHELL = [
   "/",
   "/manifest.json",
